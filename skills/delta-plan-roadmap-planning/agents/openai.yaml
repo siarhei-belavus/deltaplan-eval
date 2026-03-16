@@ -1,0 +1,4 @@
+interface:
+  display_name: "DeltaPlan Planning Workspace"
+  short_description: "Attractor-backed planning runs for DeltaPlan"
+  default_prompt: "Use $delta-plan-roadmap-planning to start or resume a DeltaPlan planning workspace run, keep durable artifacts under .codex-artifacts/delta-plan/runs, ask only the pending clarification questions, and render the latest roadmap plus capacity outputs after each successful solve."

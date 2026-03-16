@@ -1,0 +1,127 @@
+digraph DeltaPlanPlanning {
+    graph [
+        goal="Run the DeltaPlan planning workspace",
+        vars="run_dir, scenario_id=baseline, input_path, skill_root, python_bin, mcp_jar"
+    ]
+
+    start [shape=Mdiamond]
+    exit [shape=Msquare]
+
+    start_run [
+        shape=parallelogram,
+        label="Start run",
+        tool_command="$python_bin $skill_root/scripts/create_run_workspace.py --run-dir '$run_dir' --scenario-id '$scenario_id' --input '$input_path'"
+    ]
+    ingest_sources [
+        shape=parallelogram,
+        label="Ingest sources",
+        tool_command="$python_bin $skill_root/scripts/ingest_sources.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    extract_workbook [
+        shape=parallelogram,
+        label="Extract workbook",
+        tool_command="$python_bin $skill_root/scripts/extract_excel_artifacts.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    build_sheet_inventory [
+        shape=parallelogram,
+        label="Build workbook inventory",
+        tool_command="$python_bin $skill_root/scripts/build_sheet_inventory.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    parallel_analysis [
+        shape=component,
+        label="Focused analysis fan-out",
+        join_policy="wait_all",
+        error_policy="fail",
+        max_parallel=3
+    ]
+    structure_agent [
+        label="Structure agent",
+        prompt="@prompts/structure-agent.md",
+        context_keys="node.build_sheet_inventory.tool.output"
+    ]
+    feature_agent [
+        label="Feature agent",
+        prompt="@prompts/feature-agent.md",
+        context_keys="node.build_sheet_inventory.tool.output"
+    ]
+    timeline_agent [
+        label="Timeline agent",
+        prompt="@prompts/timeline-agent.md",
+        context_keys="node.build_sheet_inventory.tool.output"
+    ]
+    capacity_agent [
+        label="Capacity agent",
+        prompt="@prompts/capacity-agent.md",
+        context_keys="node.build_sheet_inventory.tool.output"
+    ]
+    constraint_agent [
+        label="Constraint agent",
+        prompt="@prompts/constraint-agent.md",
+        context_keys="node.build_sheet_inventory.tool.output"
+    ]
+    analysis_fan_in [shape=tripleoctagon, label="Analysis fan-in"]
+    analysis_lead_summary [
+        label="Analysis lead summary",
+        prompt="@prompts/analysis-lead-summary.md",
+        context_keys="node.structure_agent.last_response,node.feature_agent.last_response,node.timeline_agent.last_response,node.capacity_agent.last_response,node.constraint_agent.last_response,node.build_sheet_inventory.tool.output",
+        thread_id="analysis-lead"
+    ]
+    merge_planning_signals [
+        shape=parallelogram,
+        label="Merge planning signals",
+        tool_command="$python_bin $skill_root/scripts/merge_planning_signals.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    build_candidate_model [
+        shape=parallelogram,
+        label="Build candidate model",
+        tool_command="$python_bin $skill_root/scripts/build_candidate_model.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    clarification_gate [shape=diamond, label="Need clarification?"]
+    wait_for_human [shape=hexagon, label="Resume after clarification response exists"]
+    resume_with_clarification [
+        shape=parallelogram,
+        label="Merge clarification response",
+        tool_command="$python_bin $skill_root/scripts/merge_clarification_response.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    post_clarification_gate [shape=diamond, label="Ready to solve?"]
+    build_solver_payload [
+        shape=parallelogram,
+        label="Build solver payload",
+        tool_command="$python_bin $skill_root/scripts/build_solver_payload.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+    solve_via_mcp [
+        shape=parallelogram,
+        label="Solve via MCP",
+        tool_command="$python_bin $skill_root/scripts/call_deltaplan_mcp.py --run-dir '$run_dir' --scenario-id '$scenario_id' --mcp-jar '$mcp_jar'"
+    ]
+    render_reports [
+        shape=parallelogram,
+        label="Render reports",
+        tool_command="$python_bin $skill_root/scripts/save_and_render_schedule.py --run-dir '$run_dir' --scenario-id '$scenario_id' --estimate-profile $(python3 - <<'PY'\nimport json, pathlib\nrun_dir = pathlib.Path('$run_dir')\ncm = json.loads((run_dir / 'scenarios' / '$scenario_id' / 'normalized' / 'candidate-model.json').read_text())\nprint(cm['resolvedFields']['estimateProfile'])\nPY)"
+    ]
+    finalize_run [
+        shape=parallelogram,
+        label="Finalize run",
+        tool_command="$python_bin $skill_root/scripts/finalize_run.py --run-dir '$run_dir' --scenario-id '$scenario_id'"
+    ]
+
+    start -> start_run -> ingest_sources -> extract_workbook -> build_sheet_inventory -> parallel_analysis
+    parallel_analysis -> structure_agent
+    parallel_analysis -> feature_agent
+    parallel_analysis -> timeline_agent
+    parallel_analysis -> capacity_agent
+    parallel_analysis -> constraint_agent
+    structure_agent -> analysis_fan_in
+    feature_agent -> analysis_fan_in
+    timeline_agent -> analysis_fan_in
+    capacity_agent -> analysis_fan_in
+    constraint_agent -> analysis_fan_in
+    analysis_fan_in -> analysis_lead_summary -> merge_planning_signals -> build_candidate_model -> clarification_gate
+    clarification_gate -> wait_for_human [condition="tool.output contains \"STATE=waiting_for_input\""]
+    clarification_gate -> build_solver_payload [condition="tool.output contains \"STATE=ready_to_solve\""]
+    wait_for_human -> resume_with_clarification [label="[C] Continue"]
+    resume_with_clarification -> post_clarification_gate
+    post_clarification_gate -> build_solver_payload [condition="tool.output contains \"STATE=ready_to_solve\""]
+    post_clarification_gate -> wait_for_human [condition="tool.output contains \"STATE=waiting_for_input\""]
+    build_solver_payload -> solve_via_mcp -> render_reports -> finalize_run -> exit
+}
