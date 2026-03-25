@@ -1,5 +1,7 @@
-.venv/
-.codex-artifacts/
 __pycache__/
-*.pyc
+.codex-artifacts/
+.corpus/
 .DS_Store
+.ruff_cache/
+.venv/
+*.pyc
