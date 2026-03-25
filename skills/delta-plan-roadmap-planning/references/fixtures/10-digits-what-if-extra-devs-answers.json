@@ -1,0 +1,11 @@
+{
+  "requestId": "request-001",
+  "scenarioId": "what-if-extra-devs",
+  "answers": [
+    {
+      "questionId": "q-001",
+      "value": true,
+      "note": null
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "requestId": "request-001",
+  "scenarioId": "baseline",
+  "answers": [
+    {
+      "questionId": "q-001",
+      "value": "ai",
+      "note": null
+    },
+    {
+      "questionId": "q-002",
+      "value": [
+        {
+          "month": 1,
+          "roleFtes": {
+            "Development": 1.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 2,
+          "roleFtes": {
+            "Development": 1.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 3,
+          "roleFtes": {
+            "Development": 1.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 4,
+          "roleFtes": {
+            "Development": 1.0,
+            "QA": 1.0
+          }
+        }
+      ],
+      "note": null
+    },
+    {
+      "questionId": "q-003",
+      "value": true,
+      "note": null
+    },
+    {
+      "questionId": "q-004",
+      "value": true,
+      "note": null
+    }
+  ]
+}

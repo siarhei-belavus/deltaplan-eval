@@ -1,0 +1,42 @@
+{
+  "scenarioId": "what-if-extra-devs",
+  "parentScenarioId": "baseline",
+  "overrides": [
+    {
+      "fieldPath": "schedule.monthlyCapacity",
+      "operation": "set",
+      "value": [
+        {
+          "month": 1,
+          "roleFtes": {
+            "Development": 3.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 2,
+          "roleFtes": {
+            "Development": 3.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 3,
+          "roleFtes": {
+            "Development": 3.0,
+            "QA": 1.0
+          }
+        },
+        {
+          "month": 4,
+          "roleFtes": {
+            "Development": 3.0,
+            "QA": 1.0
+          }
+        }
+      ],
+      "source": "user",
+      "reason": "what_if_request"
+    }
+  ]
+}

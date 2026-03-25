@@ -1,0 +1,11 @@
+{
+  "name": "deltaplan-planning-skill",
+  "toolkitVersion": "1.0.0",
+  "version": "1.0.0",
+  "owner": "DeltaPlan",
+  "runtime": {
+    "requiredPython": "3.10+",
+    "packagedJar": "runtime/deltaplan-mcp.jar",
+    "promptDir": "resources/prompts"
+  }
+}
