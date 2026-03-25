@@ -1,7 +1,11 @@
 __pycache__/
+*.pyc
+*.pyo
 .codex-artifacts/
 .corpus/
-.DS_Store
 .ruff_cache/
 .venv/
-*.pyc
+.plans/
+.serena/
+.tmp/
+.DS_Store
