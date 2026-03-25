@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive release version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifacts
+        env:
+          DELTAPLAN_RELEASE_PRIVATE_KEY: ${{ secrets.DELTAPLAN_RELEASE_PRIVATE_KEY }}
+          DELTAPLAN_RELEASE_ORG: ${{ github.repository_owner }}
+          DELTAPLAN_RELEASE_REPO: ${{ github.event.repository.name }}
+          DELTAPLAN_RELEASE_VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          if [ -z "${DELTAPLAN_RELEASE_PRIVATE_KEY:-}" ]; then
+            echo "Missing DELTAPLAN_RELEASE_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+          python3 scripts/release/build_release.py
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            release/manifest.json
+            release/manifest.sig
+            release/install.sh
+            release/checksums.txt
+            release/deltaplan-cli-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
+            release/deltaplan-cli-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz
+            release/deltaplan-skill-pack-${{ steps.version.outputs.VERSION }}.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
