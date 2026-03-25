@@ -11,7 +11,7 @@ from .manifests import ReleaseManifest, ReleaseAsset
 
 
 DEFAULT_MANIFEST_URL = (
-    "https://github.com/<org>/<repo>/releases/latest/download/manifest.json"
+    "https://github.com/siarhei-belavus/deltaplan-eval/releases/latest/download/manifest.json"
 )
 
 

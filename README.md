@@ -33,14 +33,14 @@ Then users install from that release:
 
 ```bash
 # one-liner user path (install script from release)
-curl -fsSL https://github.com/<org>/<repo>/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/siarhei-belavus/deltaplan-eval/releases/latest/download/install.sh | sh
 ```
 
 Then in any fresh git repo:
 
 ```bash
 git init -q
-DELTAPLAN_MANIFEST_URL="https://github.com/<org>/<repo>/releases/latest/download/manifest.json" \
+DELTAPLAN_MANIFEST_URL="https://github.com/siarhei-belavus/deltaplan-eval/releases/latest/download/manifest.json" \
   deltaplan init
 ```
 

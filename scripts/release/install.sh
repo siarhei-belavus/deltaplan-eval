@@ -38,7 +38,7 @@ if [ -n "${DELTAPLAN_MANIFEST_URL:-}" ]; then
 elif [ -f "$SCRIPT_DIR/manifest.json" ]; then
   MANIFEST_URL="file://$SCRIPT_DIR/manifest.json"
 else
-  MANIFEST_URL="https://github.com/<org>/<repo>/releases/latest/download/manifest.json"
+  MANIFEST_URL="https://github.com/siarhei-belavus/deltaplan-eval/releases/latest/download/manifest.json"
 fi
 
 SIG_URL="$(printf '%s' "$MANIFEST_URL" | sed 's/manifest.json$/manifest.sig/')"
@@ -57,13 +57,13 @@ elif [ -f "$HOME/.deltaplan/release_public_key.pem" ]; then
 else
 cat > "$tmpdir/release_public_key.pem" <<'PEM'
 -----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7YqRUAGV5hKWKzoZCOCX
-7rqVYiejKiy7ZLXO1rPo8I0JJfRUUDMZ5UneMVsMtzp8lK3QSpScvkBJPxpRUnDM
-pLE8cZpgkyVe6pzZ5mVcFderCalyIx6nZ8EO8C5Y/d7JwA1Ej7vWp/RELZmqPOaq
-J4W23IC84IJN9qagILMPSLZWxQidxi34S3gj/rys+5VYl1Tt5xL7M52NyFys70Wm
-I4YRgvzbtiZSqNoExKj2RFtClPpyrIGJN5brxHmG4g5Tj9dfXgauTF0ReXx7qOwL
-xl8g+3vAjt6hsLx8h27dFxdak6fE3JObp2zx3nd4xeBDESlaQiGAZe15W10t0pHS
-TwIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvtn+Ej3kF1kFexMAL1sS
+TXfXizi0NTueumRP0cvXYZTH+gxE03Rn87EmdHscIt+8Pj/pS65dErGZa3lXl4Uf
+em3cQrRj7dLig0mvq+XV9L6pzvZ5xUvzfMfMXvc9lDPek0+cDYAwhqhoT5/ngMd2
+HaJMGNpmKAQ0bEJFVTxRkSoEXwbw+2BJ5UJhlQLX8XH0I9B+NMZkswbqn2xAFtD5
+IK0AyKDz+XhO6SDTKiQ9B0NR7itbSA29BnKUvU8zk24SxpDNI+NDkO6/naeVC48A
+mx5d3jhwL8tY6r2DXV51gHNRijzuc6OmERqebqDHPJcAhwKBlK6twWib10/PGv39
+MQIDAQAB
 -----END PUBLIC KEY-----
 PEM
 fi
@@ -73,7 +73,22 @@ if ! openssl dgst -sha256 -verify "$tmpdir/release_public_key.pem" -signature "$
   exit 1
 fi
 
-ASSET_INFO="$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(next((f"{i.get("name")}|{i.get("url")}|{i.get("sha256")}" for i in m.get("assets",[]) if i.get("kind")=="cli" and i.get("os")==sys.argv[2] and i.get("arch")==sys.argv[3]), ""))' "$tmpdir/manifest.json" "$OS" "$ARCH")"
+ASSET_INFO="$(python3 - "$tmpdir/manifest.json" "$OS" "$ARCH" <<'PY'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+match = next(
+    (
+        f"{item.get('name')}|{item.get('url')}|{item.get('sha256')}"
+        for item in manifest.get('assets', [])
+        if item.get('kind') == 'cli'
+        and item.get('os') == sys.argv[2]
+        and item.get('arch') == sys.argv[3]
+    ),
+    '',
+)
+print(match)
+PY
+)"
 ASSET_NAME="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 1)"
 ASSET_URL="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 2)"
 ASSET_SHA="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 3)"

@@ -112,8 +112,8 @@ def _release_base_url(release_version: str) -> str:
             return override.rstrip("/") + "/"
         return Path(override).resolve().as_uri() + "/"
 
-    org = os.environ.get("DELTAPLAN_RELEASE_ORG", "org")
-    repo = os.environ.get("DELTAPLAN_RELEASE_REPO", "repo")
+    org = os.environ.get("DELTAPLAN_RELEASE_ORG", "siarhei-belavus")
+    repo = os.environ.get("DELTAPLAN_RELEASE_REPO", "deltaplan-eval")
     return f"https://github.com/{org}/{repo}/releases/download/v{release_version}/"
 
 
