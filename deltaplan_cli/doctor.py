@@ -8,6 +8,7 @@ from pathlib import Path
 from .manifests import load_yaml_text
 from .paths import global_paths
 from .java_runtime import discover_java
+from .runtime_validation import validate_solver_jar
 
 
 @dataclass
@@ -78,8 +79,9 @@ def check_repo(repo_root: Path) -> list[DoctorIssue]:
     jar_path = (
         repo_root / ".claude" / "skills" / "deltaplan" / "runtime" / "deltaplan-mcp.jar"
     )
-    if not jar_path.exists():
-        issues.append(DoctorIssue("jar", "solver jar missing"))
+    jar_issue = validate_solver_jar(jar_path)
+    if jar_issue:
+        issues.append(DoctorIssue("jar", jar_issue))
 
     java_path = payload.get("javaPath") if isinstance(payload, dict) else None
     os_name, arch = ("", "")

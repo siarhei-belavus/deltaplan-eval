@@ -35,6 +35,7 @@ from .repo_install import (
 )
 from .repo_update import managed_edit_detected
 from .tui import choose
+from .runtime_validation import validate_solver_jar
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -175,8 +176,9 @@ def _prepare_stage(
         / "runtime"
         / "deltaplan-mcp.jar"
     )
-    if not jar_path.exists():
-        raise RuntimeError("solver jar missing from staged skill pack")
+    jar_issue = validate_solver_jar(jar_path)
+    if jar_issue:
+        raise RuntimeError(f"invalid solver jar in staged skill pack: {jar_issue}")
 
     return tx_stage, stage_root
 

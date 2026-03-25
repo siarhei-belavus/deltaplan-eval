@@ -16,6 +16,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from deltaplan_cli.manifests import utc_now
+from deltaplan_cli.runtime_validation import validate_solver_jar
 
 OS_ARCHES = [("darwin", "arm64"), ("linux", "amd64")]
 
@@ -99,6 +100,9 @@ def build_cli_payload(
 
 def build_skill_pack(output_dir: Path, version: str) -> Artifact:
     source = ROOT / "skills" / "delta-plan-roadmap-planning"
+    jar_issue = validate_solver_jar(source / "runtime" / "deltaplan-mcp.jar")
+    if jar_issue:
+        raise RuntimeError(f"cannot build skill pack: {jar_issue}")
     tar_name = f"deltaplan-skill-pack-{version}.tar.gz"
     tar_path = output_dir / tar_name
     with tarfile.open(tar_path, "w:gz") as tar:
