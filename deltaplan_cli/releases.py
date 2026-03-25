@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import hashlib
 import json
+import shutil
 import subprocess
 import urllib.request
 
@@ -26,6 +27,17 @@ def _read_bytes(source: str) -> bytes:
         return Path(source[7:]).read_bytes()
     if source.startswith("/") and Path(source).exists():
         return Path(source).read_bytes()
+
+    if source.startswith(("https://", "http://")):
+        curl = shutil.which("curl")
+        if curl:
+            proc = subprocess.run(
+                [curl, "-fsSL", source],
+                capture_output=True,
+            )
+            if proc.returncode == 0:
+                return proc.stdout
+
     with urllib.request.urlopen(source) as response:
         return response.read()
 
