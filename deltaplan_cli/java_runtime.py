@@ -88,29 +88,43 @@ def install_managed_java(
     expected_sha256: str,
     candidate_sha256: callable,
 ) -> Path:
-    # caller validates and passes candidate_sha256 function.
     candidate_sha256(archive_path, expected_sha256)
 
-    target_root = current_java_root(os_name, arch).parent
-    if target_root.exists():
-        # partial leftovers are allowed only inside the managed path by protocol.
-        pass
+    managed_root = current_java_root(os_name, arch)
+    target_root = managed_root.parent
     target_root.mkdir(parents=True, exist_ok=True)
+
+    staging_root = target_root / ".extract"
+    if staging_root.exists():
+        shutil.rmtree(staging_root)
+    staging_root.mkdir(parents=True, exist_ok=True)
 
     with tarfile.open(archive_path, "r:*") as tar:
         members = tar.getmembers()
         if not members:
             raise RuntimeError("invalid java archive")
-        tar.extractall(target_root)
+        tar.extractall(staging_root)
+
+    runtime_root: Path | None = None
+    search_roots = [staging_root]
+    search_roots.extend(item for item in staging_root.iterdir() if item.is_dir())
+    for root in search_roots:
+        if (root / "bin" / "java").exists():
+            runtime_root = root
+            break
+        if (root / "Contents" / "Home" / "bin" / "java").exists():
+            runtime_root = root / "Contents" / "Home"
+            break
+
+    if runtime_root is None:
+        raise RuntimeError("managed java archive missing bin/java")
+
+    if managed_root.exists():
+        shutil.rmtree(managed_root)
+    shutil.move(str(runtime_root), str(managed_root))
+    shutil.rmtree(staging_root, ignore_errors=True)
 
     java_path = managed_install_target(os_name, arch)
-    if not java_path.exists():
-        # discover nested layout and rewrite as managed/<bundle>/bin/java.
-        for item in target_root.iterdir():
-            candidate = item / "bin" / "java"
-            if item.is_dir() and candidate.exists():
-                java_path = candidate
-                break
     check_candidate(java_path)
     return java_path
 
