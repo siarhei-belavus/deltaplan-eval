@@ -73,22 +73,11 @@ if ! openssl dgst -sha256 -verify "$tmpdir/release_public_key.pem" -signature "$
   exit 1
 fi
 
-ASSET_INFO="$(python3 - "$tmpdir/manifest.json" "$OS" "$ARCH" <<'PY'
-import json, sys
-manifest = json.load(open(sys.argv[1]))
-match = next(
-    (
-        f"{item.get('name')}|{item.get('url')}|{item.get('sha256')}"
-        for item in manifest.get('assets', [])
-        if item.get('kind') == 'cli'
-        and item.get('os') == sys.argv[2]
-        and item.get('arch') == sys.argv[3]
-    ),
-    '',
-)
-print(match)
-PY
-)"
+ASSET_INFO="$(python3 -c "import json,sys; manifest=json.load(open(sys.argv[1]));
+for item in manifest.get('assets', []):
+    if item.get('kind') == 'cli' and item.get('os') == sys.argv[2] and item.get('arch') == sys.argv[3]:
+        print('{}|{}|{}'.format(item.get('name', ''), item.get('url', ''), item.get('sha256', '')))
+        break" "$tmpdir/manifest.json" "$OS" "$ARCH")"
 ASSET_NAME="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 1)"
 ASSET_URL="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 2)"
 ASSET_SHA="$(printf '%s' "$ASSET_INFO" | cut -d '|' -f 3)"
