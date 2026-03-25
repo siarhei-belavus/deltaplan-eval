@@ -10,6 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin
+from urllib.request import Request, urlopen
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -120,11 +121,25 @@ def _release_base_url(release_version: str) -> str:
 def _load_java_asset(base_url: str, os_name: str, arch: str) -> tuple[str, str]:
     url = os.environ.get(f"DELTAPLAN_JAVA_{os_name}_{arch}_URL")
     sha = os.environ.get(f"DELTAPLAN_JAVA_{os_name}_{arch}_SHA")
-    if not url:
-        url = urljoin(base_url, f"temurin-jre-21-{os_name}-{arch}.tar.gz")
-    if not sha:
-        sha = "0000000000000000000000000000000000000000000000000000000000000000"
-    return url, sha
+    if url and sha:
+        return url, sha
+
+    api_os = {"darwin": "mac", "linux": "linux"}.get(os_name, os_name)
+    api_arch = {"arm64": "aarch64", "amd64": "x64"}.get(arch, arch)
+    api_url = (
+        "https://api.adoptium.net/v3/assets/latest/21/hotspot"
+        f"?architecture={api_arch}&image_type=jre&os={api_os}&vendor=eclipse"
+    )
+    req = Request(api_url, headers={"User-Agent": "deltaplan-release-builder"})
+    try:
+        with urlopen(req) as response:
+            payload = json.load(response)
+        package = payload[0]["binary"]["package"]
+        return package["link"], package["checksum"]
+    except Exception:
+        fallback_url = urljoin(base_url, f"temurin-jre-21-{os_name}-{arch}.tar.gz")
+        fallback_sha = sha or "0000000000000000000000000000000000000000000000000000000000000000"
+        return fallback_url, fallback_sha
 
 
 def build_manifest(output_dir: Path, artifacts: list[Artifact], version: str) -> Path:
