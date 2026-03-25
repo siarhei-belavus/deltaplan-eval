@@ -21,7 +21,10 @@ def installed_skill_root() -> Path:
 def repo_root() -> Path:
     """Return the repository root that contains this skill install."""
 
-    return installed_skill_root().parent.parent
+    skill_root = installed_skill_root()
+    if skill_root.parent.parent.name == ".claude":
+        return skill_root.parent.parent.parent
+    return skill_root.parent.parent
 
 
 def repo_deltaplan_root() -> Path:
