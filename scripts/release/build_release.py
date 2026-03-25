@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import tarfile
+import tempfile
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -171,19 +172,50 @@ def build_manifest(output_dir: Path, artifacts: list[Artifact], version: str) ->
     return path
 
 
+def _materialize_secret_file(value: str, suffix: str) -> tuple[str, bool]:
+    candidate = Path(value)
+    if "\n" not in value and candidate.exists():
+        return str(candidate), False
+
+    tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=suffix)
+    try:
+        tmp.write(value)
+        if not value.endswith("\n"):
+            tmp.write("\n")
+        tmp.flush()
+    finally:
+        tmp.close()
+    return tmp.name, True
+
+
 def sign_manifest(manifest: Path, out_dir: Path) -> Path:
-    key = os.environ.get("DELTAPLAN_RELEASE_PRIVATE_KEY")
-    if not key:
+    key_value = os.environ.get("DELTAPLAN_RELEASE_PRIVATE_KEY")
+    if not key_value:
         raise RuntimeError("DELTAPLAN_RELEASE_PRIVATE_KEY is required for signing")
-    sig = out_dir / "manifest.sig"
-    proc = subprocess.run(
-        ["openssl", "dgst", "-sha256", "-sign", key, "-out", str(sig), str(manifest)],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"manifest signing failed: {proc.stderr or proc.stdout}")
-    return sig
+
+    key_path, cleanup = _materialize_secret_file(key_value, ".pem")
+    try:
+        sig = out_dir / "manifest.sig"
+        proc = subprocess.run(
+            [
+                "openssl",
+                "dgst",
+                "-sha256",
+                "-sign",
+                key_path,
+                "-out",
+                str(sig),
+                str(manifest),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"manifest signing failed: {proc.stderr or proc.stdout}")
+        return sig
+    finally:
+        if cleanup:
+            Path(key_path).unlink(missing_ok=True)
 
 
 def build_checksums(output_dir: Path, files: list[Path]) -> Path:
@@ -198,12 +230,16 @@ def copy_install_script(output_dir: Path) -> None:
     target = output_dir / "install.sh"
     target.write_text(source_script.read_text(encoding="utf-8"), encoding="utf-8")
 
-    key_source = os.environ.get(
+    key_value = os.environ.get(
         "DELTAPLAN_RELEASE_PUBLIC_KEY",
         str(ROOT / "release" / "release_public_key.pem"),
     )
+    if "\n" not in key_value and Path(key_value).exists():
+        public_key = Path(key_value).read_text(encoding="utf-8")
+    else:
+        public_key = key_value if key_value.endswith("\n") else key_value + "\n"
     (output_dir / "release_public_key.pem").write_text(
-        Path(key_source).read_text(encoding="utf-8"),
+        public_key,
         encoding="utf-8",
     )
 
