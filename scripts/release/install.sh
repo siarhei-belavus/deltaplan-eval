@@ -86,7 +86,12 @@ fi
 
 download_file "$ASSET_URL" "$tmpdir/$ASSET_NAME"
 
-ACTUAL_SHA="$(python3 -c 'import hashlib,sys; print(hashlib.file_digest(open(sys.argv[1],"rb"),"sha256").hexdigest())' "$tmpdir/$ASSET_NAME")"
+ACTUAL_SHA="$(python3 -c 'import hashlib,sys; h=hashlib.sha256(); f=open(sys.argv[1],"rb");
+while True:
+    b=f.read(1024*1024)
+    if not b: break
+    h.update(b)
+print(h.hexdigest())' "$tmpdir/$ASSET_NAME")"
 if [ "$ACTUAL_SHA" != "$ASSET_SHA" ]; then
   echo "cli sha256 mismatch" >&2
   exit 1
@@ -108,7 +113,12 @@ if [ -w /usr/local/bin ]; then
 else
   mkdir -p "$HOME/.local/bin"
   LAUNCHER_PATH="$HOME/.local/bin/deltaplan"
-  echo "Launcher installed at $LAUNCHER_PATH (not on PATH unless configured)"
+  echo "Launcher installed at $LAUNCHER_PATH"
+  echo "~/.local/bin is not always on PATH."
+  echo "If 'deltaplan' is not found, run:"
+  echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
+  echo "To persist for zsh:"
+  echo "  echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.zshrc && source ~/.zshrc"
 fi
 
 cat > "$LAUNCHER_PATH" <<EOF
