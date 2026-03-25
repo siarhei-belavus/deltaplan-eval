@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from planning_workspace_lib import (
-    ensure_attractor_stage_artifacts,
     load_run_manifest,
     relative_to_run,
     touch_generated_artifact,
@@ -194,7 +193,7 @@ def main() -> int:
         "confirmationRequired": bool(unresolved_fields),
     }
     if not planning_horizon:
-        validation_summary["blockingIssues"].append("Planning horizon could not be resolved from workbook signals.")
+        validation_summary["blockingIssues"].append("Planning horizon could not be resolved from source signals.")
 
     if validation_summary["blockingIssues"]:
         validation_summary["status"] = "needs_confirmation"
@@ -368,18 +367,6 @@ def main() -> int:
         args.scenario_id,
         defaultsApplied=[item["fieldPath"] for item in defaults_applied],
         validationSummary=relative_to_run(run_dir, normalized_dir / "validation-summary.json"),
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="build_candidate_model.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
-        summary=f"Built candidate model and emitted clarification request {request_id}.",
-        state="waiting_for_input",
-        outputs={
-            "candidateModelPath": relative_to_run(run_dir, normalized_dir / "candidate-model.json"),
-            "clarificationRequestPath": latest_request_path,
-        },
     )
 
     print(f"CANDIDATE_MODEL={normalized_dir / 'candidate-model.json'}")

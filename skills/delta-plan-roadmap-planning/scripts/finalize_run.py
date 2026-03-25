@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 from planning_workspace_lib import (
-    ensure_attractor_stage_artifacts,
     next_output_prefix,
     relative_to_run,
     update_checkpoint,
@@ -83,15 +82,6 @@ def main() -> int:
         latest_summary="The active scenario completed successfully.",
         active_scenario_id=args.scenario_id,
         resume_hint="Create a what-if scenario or inspect the latest outputs.",
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="finalize_run.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
-        summary="Published the latest scenario outputs and marked the run completed.",
-        state="success",
-        outputs=latest_output_paths,
     )
     print("STATE=completed")
     return 0

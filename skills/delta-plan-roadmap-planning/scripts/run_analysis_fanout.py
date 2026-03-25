@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Persist the six workbook-analysis artifacts used by planning-signals merging.
+Persist the six source-analysis artifacts used by planning-signals merging.
 
 AICODE-NOTE: This helper keeps the active system on durable scenario artifacts by
-writing normalized `analysis/*.json` outputs directly from the workbook
-inventory, without relying on Attractor runtime files.
+writing normalized `analysis/*.json` outputs directly from canonical source
+inventory artifacts.
 """
 
 from __future__ import annotations
@@ -96,14 +96,14 @@ def coverage(status: str, reason: str) -> dict[str, str]:
 
 
 def build_structure_output(
-    workbook_profile: dict[str, Any],
+    source_profile: dict[str, Any],
     inventory_refs: dict[str, Any],
 ) -> dict[str, Any]:
-    sheet_classifications = []
+    segment_classifications = []
     region_classifications = []
     used_regions = []
-    for sheet in workbook_profile.get("sheets", []):
-        name = str(sheet.get("sheetName", ""))
+    for segment in source_profile.get("segments", []):
+        name = str(segment.get("segmentLabel", ""))
         lowered = name.lower()
         if "assumption" in lowered:
             role = "assumptions"
@@ -113,12 +113,12 @@ def build_structure_output(
             role = "mixed"
         else:
             role = "unknown"
-        sheet_classifications.append(
+        segment_classifications.append(
             {
-                "sheetName": name,
-                "sheetRole": role,
+                "segmentLabel": name,
+                "segmentRole": role,
                 "confidence": "medium" if role == "unknown" else "high",
-                "provenance": [f"{name}!{sheet['rowBounds']['min']}:{sheet['rowBounds']['max']}"],
+                "provenance": [f"segment:{segment['segmentId']}:rows-{segment['rowBounds']['min']}-{segment['rowBounds']['max']}"],
             }
         )
 
@@ -137,7 +137,7 @@ def build_structure_output(
             reason = "Headers describe a numbered assumption list."
         else:
             role = "unknown"
-            reason = "No stronger workbook classification signal was found."
+            reason = "No stronger source classification signal was found."
         region_classifications.append(
             {
                 "regionId": region_ref["regionId"],
@@ -149,13 +149,13 @@ def build_structure_output(
         )
 
     return {
-        "summary": "Workbook inventory was classified into assumptions, feature backlog, and milestone/timeline regions.",
+        "summary": "Source inventory was classified into assumptions, feature backlog, and milestone/timeline segments.",
         "usedRegions": used_regions,
         "expandedSearch": [],
         "ignoredRegions": [],
         "coverageAssessment": coverage("high", "All normalized region artifacts were reviewed directly."),
         "missedRiskCandidates": inventory_refs.get("unexplainedAreas", []),
-        "sheetClassifications": sheet_classifications,
+        "segmentClassifications": segment_classifications,
         "regionClassifications": region_classifications,
         "clarificationCandidates": [],
         "reviewNotes": [
@@ -229,7 +229,7 @@ def build_timeline_output(
                 "acceptanceCriteria": acceptance or None,
                 "deadlineWeek": None,
                 "confidence": "medium" if deadline_rows_blank else "high",
-                "provenance": [f"{milestone_region['sheetName']}!{milestone_region['range']}"],
+                "provenance": [f"segment:{milestone_region['regionId']}:{milestone_region['range']}"],
             }
         )
 
@@ -247,7 +247,7 @@ def build_timeline_output(
                         "constraint": str(values[1]).strip(),
                         "classification": "fixed_start_anchor",
                         "confidence": "high",
-                        "provenance": [f"{assumptions_region['sheetName']}!{assumptions_region['range']}"],
+                        "provenance": [f"segment:{assumptions_region['regionId']}:{assumptions_region['range']}"],
                     }
                 )
                 deadlines.append(
@@ -258,7 +258,7 @@ def build_timeline_output(
                         "date": "unknown",
                         "deadlineWeek": {"month": 1, "week": 1} if planning_horizon_months else None,
                         "confidence": "medium",
-                        "provenance": [f"{assumptions_region['sheetName']}!{assumptions_region['range']}"],
+                        "provenance": [f"segment:{assumptions_region['regionId']}:{assumptions_region['range']}"],
                     }
                 )
 
@@ -269,7 +269,7 @@ def build_timeline_output(
                 "fieldPath": "schedule.milestones.deadlineWeek",
                 "prompt": f"Please provide milestone timing across {week_headers[0]}-{week_headers[-1]}.",
                 "reason": "Milestone rows exist, but their week-allocation cells are blank.",
-                "provenance": [f"{milestone_region['sheetName']}!{milestone_region['range']}"],
+                "provenance": [f"segment:{milestone_region['regionId']}:{milestone_region['range']}"],
             }
         )
 
@@ -368,9 +368,9 @@ def build_feature_output(
                 "qaOverhead": 0.2,
                 "status": None,
                 "confidence": "high",
-                "provenance": [f"{feature_region['sheetName']}!row-{row['rowNumber']}"],
+                "provenance": [f"segment:{feature_region['regionId']}:row-{row['rowNumber']}"],
                 "normalizationNotes": [
-                    "AI contingency is recorded only for development when the workbook omits a QA contingency column."
+                    "AI contingency is recorded only for development when the source omits a QA contingency column."
                 ]
                 if ai_contingency is not None
                 else [],
@@ -404,7 +404,7 @@ def build_capacity_output(
     if planning_horizon_months:
         prompt = f"Please provide explicit monthly FTE capacity by role for Month 1-{planning_horizon_months}."
     return {
-        "summary": "The workbook exposes effort estimates by role but no explicit monthly capacity allocation table.",
+        "summary": "The source exposes effort estimates by role but no explicit monthly capacity allocation table.",
         "usedRegions": [feature_region["regionId"]] if feature_region else [],
         "expandedSearch": [],
         "ignoredRegions": [],
@@ -414,8 +414,8 @@ def build_capacity_output(
         ),
         "missedRiskCandidates": ["Effort totals can be mistaken for staffing capacity when no capacity table exists."],
         "roles": [
-            {"name": "Development", "confidence": "high", "provenance": [f"{feature_region['sheetName']}!{feature_region['range']}"]},
-            {"name": "QA", "confidence": "high", "provenance": [f"{feature_region['sheetName']}!{feature_region['range']}"]},
+            {"name": "Development", "confidence": "high", "provenance": [f"segment:{feature_region['regionId']}:{feature_region['range']}"]},
+            {"name": "QA", "confidence": "high", "provenance": [f"segment:{feature_region['regionId']}:{feature_region['range']}"]},
         ]
         if feature_region
         else [],
@@ -424,8 +424,8 @@ def build_capacity_output(
             {
                 "fieldPath": "schedule.monthlyCapacity",
                 "prompt": prompt,
-                "reason": "No explicit monthly role capacity values were found in the workbook.",
-                "provenance": [f"{feature_region['sheetName']}!{feature_region['range']}"] if feature_region else [],
+                "reason": "No explicit monthly role capacity values were found in the source artifacts.",
+                "provenance": [f"segment:{feature_region['regionId']}:{feature_region['range']}"] if feature_region else [],
             }
         ],
         "reviewNotes": ["Capacity output deliberately separates staffing capacity from effort estimates."],
@@ -467,15 +467,15 @@ def build_constraint_output(
                     "id": identifier,
                     "text": text,
                     "confidence": "medium",
-                    "provenance": [f"{assumptions_region['sheetName']}!row-{row['rowNumber']}"],
+                    "provenance": [f"segment:{assumptions_region['regionId']}:row-{row['rowNumber']}"],
                 }
             )
             constraints.append(
                 {
-                    "type": "workbook_assumption",
+                    "type": "source_assumption",
                     "summary": text,
                     "confidence": "medium",
-                    "provenance": [f"{assumptions_region['sheetName']}!row-{row['rowNumber']}"],
+                    "provenance": [f"segment:{assumptions_region['regionId']}:row-{row['rowNumber']}"],
                 }
             )
 
@@ -485,7 +485,7 @@ def build_constraint_output(
     if assumptions_region:
         used_regions.append(assumptions_region["regionId"])
     return {
-        "summary": "Constraints were derived from workbook assumptions and explicit feature dependency references.",
+        "summary": "Constraints were derived from source assumptions and explicit feature dependency references.",
         "usedRegions": used_regions,
         "expandedSearch": [],
         "ignoredRegions": [],
@@ -496,7 +496,7 @@ def build_constraint_output(
         "assumptions": assumptions,
         "riskSignals": [],
         "clarificationCandidates": [],
-        "reviewNotes": ["Constraint output preserves explicit workbook assumptions separately from resolved feature dependencies."],
+        "reviewNotes": ["Constraint output preserves explicit source assumptions separately from resolved feature dependencies."],
     }
 
 
@@ -528,8 +528,8 @@ def main() -> int:
     analysis_dir = scenario_root / "analysis"
     normalized_dir = scenario_root / "normalized"
 
-    require_json(run_dir / "intake" / "workbook-manifest.json", "workbook manifest")
-    workbook_profile = require_json(normalized_dir / "workbook-profile.json", "workbook profile")
+    require_json(run_dir / "intake" / "source-manifest.json", "source manifest")
+    source_profile = require_json(normalized_dir / "source-profile.json", "source profile")
     inventory_refs = require_json(normalized_dir / "inventory-refs.json", "inventory refs")
     load_prompt_texts()
 
@@ -551,7 +551,7 @@ def main() -> int:
     milestone_region = region_payloads.get(milestone_region_ref["regionId"]) if milestone_region_ref else None
     assumptions_region = region_payloads.get(assumptions_region_ref["regionId"]) if assumptions_region_ref else None
 
-    structure_output = build_structure_output(workbook_profile, inventory_refs)
+    structure_output = build_structure_output(source_profile, inventory_refs)
     timeline_output, feature_to_phase, _milestones = build_timeline_output(milestone_region, assumptions_region)
     feature_output, features = build_feature_output(feature_region, feature_to_phase)
     capacity_output = build_capacity_output(feature_region, timeline_output.get("planningHorizonMonths"))

@@ -70,7 +70,8 @@ Use repo-local paths only:
 
 ```bash
 .deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/ingest_sources.py
-.deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/extract_excel_artifacts.py
+.deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/extract_source_artifacts.py
+.deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/build_source_inventory.py
 .deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/run_analysis_fanout.py
 .deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/call_deltaplan_mcp.py
 ```

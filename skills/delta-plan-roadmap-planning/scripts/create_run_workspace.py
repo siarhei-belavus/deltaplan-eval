@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""
-Create or initialize a DeltaPlan planning run workspace.
-
-AICODE-NOTE: This script owns the stable top-level run workspace contract so later stages can assume deterministic paths before any workbook-specific logic runs.
-"""
+"""Create or initialize a DeltaPlan planning run workspace."""
 
 from __future__ import annotations
 
@@ -15,8 +11,10 @@ from planning_workspace_lib import (
     WORKSPACE_VERSION,
     choose_primary_input,
     classify_input,
-    ensure_attractor_stage_artifacts,
     ensure_versioned_copy,
+    generic_next_action,
+    generic_resume_hint,
+    parser_name_for_kind,
     relative_to_run,
     run_manifest_path,
     scenario_dir,
@@ -53,6 +51,7 @@ def main() -> int:
         raise SystemExit(f"Missing input artifact(s): {', '.join(missing)}")
 
     primary_input = choose_primary_input(source_paths)
+    primary_kind = classify_input(primary_input)
     scenario_slug = args.scenario_id
     if args.run_dir:
         run_dir = Path(args.run_dir).resolve()
@@ -64,30 +63,35 @@ def main() -> int:
     (run_dir / "inputs").mkdir(exist_ok=True)
     (run_dir / "intake").mkdir(exist_ok=True)
     (run_dir / "debug").mkdir(exist_ok=True)
-    (run_dir / "attractor").mkdir(exist_ok=True)
     scenario_root = scenario_dir(run_dir, args.scenario_id)
-    for subdir in ["normalized", "clarifications", "solver", "outputs"]:
+    for subdir in ["normalized", "analysis", "clarifications", "solver", "outputs"]:
         (scenario_root / subdir).mkdir(parents=True, exist_ok=True)
 
     copied_sources = []
-    for source_path in source_paths:
+    for index, source_path in enumerate(source_paths, start=1):
         copied = ensure_versioned_copy(run_dir / "inputs", source_path)
+        source_kind = classify_input(source_path)
         copied_sources.append(
             {
+                "sourceId": f"source-{index}",
                 "originalPath": str(source_path),
                 "copiedPath": relative_to_run(run_dir, copied),
-                "kind": classify_input(source_path),
+                "kind": source_kind,
+                "parser": parser_name_for_kind(source_kind),
                 "isPrimary": source_path == primary_input,
             }
         )
         touch_generated_artifact(run_dir, copied)
 
+    primary_source = next(item for item in copied_sources if item["isPrimary"])
     run_manifest = {
         "runId": run_dir.name,
         "workspaceVersion": WORKSPACE_VERSION,
         "createdAt": utc_now(),
         "activeScenarioId": args.scenario_id,
-        "primaryInputArtifact": next(item["copiedPath"] for item in copied_sources if item["isPrimary"]),
+        "primarySourceId": primary_source["sourceId"],
+        "primaryInputArtifact": primary_source["copiedPath"],
+        "sourceKind": primary_kind,
         "sourceFiles": copied_sources,
         "generatedArtifactPaths": sorted(
             relative_to_run(run_dir, path)
@@ -97,6 +101,8 @@ def main() -> int:
     }
     write_json(run_manifest_path(run_dir), run_manifest)
 
+    next_action = generic_next_action(primary_kind)
+    resume_hint = generic_resume_hint(primary_kind)
     write_json(
         scenario_manifest_path(run_dir, args.scenario_id),
         {
@@ -121,7 +127,7 @@ def main() -> int:
             "scenarioId": args.scenario_id,
             "scenarioSlug": scenario_slug,
             "currentStage": args.stage_id,
-            "nextAction": "Extract workbook intake artifacts",
+            "nextAction": next_action,
             "latestSummary": "Run workspace initialized.",
             "latestClarificationRequestPath": None,
             "latestSolveRequestPath": None,
@@ -133,7 +139,7 @@ def main() -> int:
         run_dir,
         state="running",
         current_stage=args.stage_id,
-        next_action="Extract workbook intake artifacts",
+        next_action=next_action,
         latest_summary="Run workspace initialized.",
         active_scenario_id=args.scenario_id,
     )
@@ -141,19 +147,10 @@ def main() -> int:
         run_dir,
         state="running",
         current_stage=args.stage_id,
-        next_action="Extract workbook intake artifacts",
+        next_action=next_action,
         latest_summary="Run workspace initialized.",
         active_scenario_id=args.scenario_id,
-        resume_hint="Run extract_workbook next.",
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="create_run_workspace.py",
-        inputs={"inputArtifacts": [str(item) for item in source_paths], "scenarioId": args.scenario_id},
-        summary="Initialized run workspace and copied source artifacts.",
-        state="success",
-        outputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
+        resume_hint=resume_hint,
     )
     update_scenario_manifest(
         run_dir,
@@ -162,6 +159,14 @@ def main() -> int:
         latestSolveResponsePath=None,
         latestOutputVersion=None,
         latestOutputPaths={},
+    )
+    update_scenario_status(
+        run_dir,
+        args.scenario_id,
+        state="running",
+        current_stage=args.stage_id,
+        next_action=next_action,
+        latest_summary="Run workspace initialized and source artifacts copied.",
     )
 
     print(f"RUN_DIR={run_dir}")

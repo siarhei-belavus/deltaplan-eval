@@ -2,7 +2,7 @@
 """
 Merge the latest clarification response into the candidate model.
 
-AICODE-NOTE: Clarification merging records explicit overrides separately from extracted workbook facts so reviewers can tell exactly which values were confirmed by a human.
+AICODE-NOTE: Clarification merging records explicit overrides separately from extracted source facts so reviewers can tell exactly which values were confirmed by a human.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from typing import Any
 
 from planning_workspace_lib import (
     assign_field,
-    ensure_attractor_stage_artifacts,
     load_scenario_status,
     relative_to_run,
     touch_generated_artifact,
@@ -253,19 +252,6 @@ def main() -> int:
             latest_clarification_request_path=relative_to_run(run_dir, request_path),
         )
 
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="merge_clarification_response.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
-        summary="Merged clarification response into the candidate model.",
-        state="success" if ready else "waiting_for_input",
-        outputs={
-            "responsePath": relative_to_run(run_dir, response_path),
-            "readyToSolve": ready,
-            "resolvedPlanningSignalsPath": relative_to_run(run_dir, resolved_signals_path),
-        },
-    )
     print(f"READY_TO_SOLVE={'true' if ready else 'false'}")
     print(f"STATE={'ready_to_solve' if ready else 'waiting_for_input'}")
     return 0

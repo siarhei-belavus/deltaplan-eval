@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Build a sheet-agnostic workbook inventory and region candidates.
+Build a source-agnostic inventory and segment candidates.
 
-AICODE-NOTE: The inventory stage stays deterministic so semantic analysis can reason over a stable workbook profile instead of workbook-specific sheet names.
+AICODE-NOTE: The inventory stage stays deterministic so semantic analysis can reason over a stable source profile instead of parser-specific segment labels.
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from planning_workspace_lib import (
-    ensure_attractor_stage_artifacts,
-    load_run_manifest,
+        load_run_manifest,
     read_json,
     relative_to_run,
     touch_generated_artifact,
@@ -29,10 +28,10 @@ from planning_workspace_lib import (
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build workbook inventory and region candidates.")
+    parser = argparse.ArgumentParser(description="Build source inventory and segment candidates.")
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--scenario-id", default="baseline")
-    parser.add_argument("--stage-id", default="build_sheet_inventory")
+    parser.add_argument("--stage-id", default="build_source_inventory")
     return parser.parse_args()
 
 
@@ -51,22 +50,22 @@ def column_letter(index: int) -> str:
     return result
 
 
-def load_sheet_payloads(intake_root: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+def load_segment_payloads(run_dir: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
     payloads = []
-    for sheet_name in manifest.get("sheetOrder", []):
-        artifact = manifest.get("sheetArtifacts", {}).get(sheet_name, {})
-        slug = artifact.get("slug")
-        if not slug:
+    for segment_id, artifact in manifest.get("segmentArtifacts", {}).items():
+        json_path = artifact.get("jsonPath")
+        if not json_path:
             continue
-        payload = read_json(intake_root / "sheets" / f"{slug}.json", default={})
+        payload = read_json(run_dir / json_path, default={})
         if payload:
             payloads.append(payload)
+    payloads.sort(key=lambda item: (item.get("containerLabel", ""), item.get("segmentId", "")))
     return payloads
 
 
-def sheet_rows(sheet_payload: dict[str, Any]) -> dict[int, dict[int, dict[str, Any]]]:
+def segment_rows(segment_payload: dict[str, Any]) -> dict[int, dict[int, dict[str, Any]]]:
     rows: dict[int, dict[int, dict[str, Any]]] = {}
-    for cell in sheet_payload.get("cells", []):
+    for cell in segment_payload.get("cells", []):
         value = cell.get("displayValue")
         if value in (None, ""):
             continue
@@ -220,7 +219,7 @@ def build_region_rows(
 
 
 def build_region(
-    sheet_payload: dict[str, Any],
+    segment_payload: dict[str, Any],
     rows: dict[int, dict[int, dict[str, Any]]],
     start_row: int,
     end_row: int,
@@ -255,11 +254,11 @@ def build_region(
         "formulaCount": formula_count,
         "referenceTokenCount": len(reference_tokens),
     }
-    region_id = f"{sheet_payload['sheetSlug']}--r{region_index:02d}"
+    region_id = f"{segment_payload['segmentId']}--r{region_index:02d}"
     region_summary = {
         "regionId": region_id,
-        "sheetName": sheet_payload["sheetName"],
-        "sheetSlug": sheet_payload["sheetSlug"],
+        "segmentLabel": segment_payload["segmentLabel"],
+        "segmentId": segment_payload["segmentId"],
         "rowStart": start_row,
         "rowEnd": end_row,
         "columnStart": min_column,
@@ -271,19 +270,19 @@ def build_region(
         "kindHints": region_kind_hints(headers, [item["values"] for item in sample_rows_payload], stats),
         "evidence": {
             "referenceTokens": reference_tokens,
-            "mergedRanges": [item for item in sheet_payload.get("mergedRanges", []) if intersects_range(item, start_row, end_row)],
+            "mergedRanges": [item for item in segment_payload.get("mergedRanges", []) if intersects_range(item, start_row, end_row)],
         },
         "stats": stats,
         "provenance": {
-            "sheet": sheet_payload["sheetName"],
+            "segment": segment_payload["segmentLabel"],
             "range": f"{column_letter(min_column)}{start_row}:{column_letter(max_column)}{end_row}",
             "headerEvidence": [item for item in headers if item][:8],
         },
     }
     region_artifact = {
         "regionId": region_id,
-        "sheetName": sheet_payload["sheetName"],
-        "sheetSlug": sheet_payload["sheetSlug"],
+        "segmentLabel": segment_payload["segmentLabel"],
+        "segmentId": segment_payload["segmentId"],
         "range": region_summary["range"],
         "headerRow": header_row,
         "headers": headers,
@@ -305,43 +304,43 @@ def intersects_range(range_ref: str, start_row: int, end_row: int) -> bool:
     return not (max(numbers) < start_row or min(numbers) > end_row)
 
 
-def sheet_summary(sheet_payload: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
-    rows = sheet_rows(sheet_payload)
+def segment_summary(segment_payload: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    rows = segment_rows(segment_payload)
     non_empty_rows = sorted(rows)
     non_empty_columns = sorted({column for row in rows.values() for column in row})
     type_counter = Counter(
         cell.get("inferredType", "unknown")
-        for cell in sheet_payload.get("cells", [])
+        for cell in segment_payload.get("cells", [])
         if cell.get("displayValue") not in (None, "")
     )
     return {
-        "sheetName": sheet_payload["sheetName"],
-        "sheetSlug": sheet_payload["sheetSlug"],
-        "hidden": sheet_payload.get("hidden", False),
-        "rowBounds": sheet_payload.get("rowBounds", {}),
-        "columnBounds": sheet_payload.get("columnBounds", {}),
+        "segmentLabel": segment_payload["segmentLabel"],
+        "segmentId": segment_payload["segmentId"],
+        "hidden": segment_payload.get("hidden", False),
+        "rowBounds": segment_payload.get("rowBounds", {}),
+        "columnBounds": segment_payload.get("columnBounds", {}),
         "nonEmptyRowCount": len(non_empty_rows),
         "nonEmptyColumnCount": len(non_empty_columns),
-        "formulaPresence": manifest.get("formulaPresence", {}).get(sheet_payload["sheetName"], False),
-        "dateLikeCellCount": len(manifest.get("dateLikeCells", {}).get(sheet_payload["sheetName"], [])),
-        "detectedTableRanges": manifest.get("detectedTableRanges", {}).get(sheet_payload["sheetName"], []),
-        "mergedRanges": sheet_payload.get("mergedRanges", []),
+        "formulaPresence": manifest.get("formulaPresence", {}).get(segment_payload["segmentLabel"], False),
+        "dateLikeCellCount": len(manifest.get("dateLikeCells", {}).get(segment_payload["segmentLabel"], [])),
+        "detectedTableRanges": manifest.get("detectedTableRanges", {}).get(segment_payload["segmentLabel"], []),
+        "mergedRanges": segment_payload.get("mergedRanges", []),
         "topInferredTypes": dict(type_counter.most_common(4)),
         "rowSegments": contiguous_blocks(non_empty_rows),
     }
 
 
-def cross_sheet_reference_hints(regions: list[dict[str, Any]]) -> dict[str, list[str]]:
-    token_to_sheets: dict[str, set[str]] = {}
+def cross_segment_reference_hints(regions: list[dict[str, Any]]) -> dict[str, list[str]]:
+    token_to_segments: dict[str, set[str]] = {}
     for region in regions:
         for token in region.get("evidence", {}).get("referenceTokens", []):
-            token_to_sheets.setdefault(token, set()).add(region["sheetName"])
+            token_to_segments.setdefault(token, set()).add(region["segmentLabel"])
     hints: dict[str, list[str]] = {}
     for region in regions:
         hints[region["regionId"]] = sorted(
             token
             for token in region.get("evidence", {}).get("referenceTokens", [])
-            if len(token_to_sheets.get(token, set())) > 1
+            if len(token_to_segments.get(token, set())) > 1
         )
     return hints
 
@@ -349,25 +348,25 @@ def cross_sheet_reference_hints(regions: list[dict[str, Any]]) -> dict[str, list
 def build_inventory_refs(
     run_dir: Path,
     scenario_id: str,
-    workbook_manifest: dict[str, Any],
-    workbook_profile: dict[str, Any],
+    source_manifest: dict[str, Any],
+    source_profile: dict[str, Any],
     region_artifacts: dict[str, str],
 ) -> dict[str, Any]:
     run_manifest = load_run_manifest(run_dir)
-    sheet_regions: dict[str, list[dict[str, Any]]] = {}
-    for region in workbook_profile["regions"]:
-        sheet_regions.setdefault(region["sheetName"], []).append(region)
-    for regions in sheet_regions.values():
+    segment_groups: dict[str, list[dict[str, Any]]] = {}
+    for region in source_profile["regions"]:
+        segment_groups.setdefault(region["segmentLabel"], []).append(region)
+    for regions in segment_groups.values():
         regions.sort(key=lambda item: item["rowStart"])
 
-    cross_sheet_hints = cross_sheet_reference_hints(workbook_profile["regions"])
+    cross_segment_hints = cross_segment_reference_hints(source_profile["regions"])
     unexplained_areas: list[dict[str, Any]] = []
-    sheet_refs: list[dict[str, Any]] = []
+    segment_refs: list[dict[str, Any]] = []
     region_refs: list[dict[str, Any]] = []
 
-    for sheet in workbook_profile["sheets"]:
-        artifact = workbook_manifest.get("sheetArtifacts", {}).get(sheet["sheetName"], {})
-        regions = sheet_regions.get(sheet["sheetName"], [])
+    for segment in source_profile["segments"]:
+        artifact = source_manifest.get("segmentArtifacts", {}).get(segment["segmentId"], {})
+        regions = segment_groups.get(segment["segmentLabel"], [])
         suspicious_segments: list[list[int]] = []
         for index, region in enumerate(regions):
             previous_region = regions[index - 1] if index > 0 else None
@@ -390,14 +389,14 @@ def build_inventory_refs(
                 suspicion_flags.append("similar_headers_to_adjacent_region")
             if next_region and header_similarity(region["headers"], next_region["headers"]) >= 0.5:
                 suspicion_flags.append("similar_headers_to_adjacent_region")
-            if cross_sheet_hints.get(region["regionId"]):
-                suspicion_flags.append("cross_sheet_reference_tokens_detected")
+            if cross_segment_hints.get(region["regionId"]):
+                suspicion_flags.append("cross_segment_reference_tokens_detected")
 
             if suspicion_flags or region["kindHints"] == ["unknown"]:
                 suspicious_segments.append([region["rowStart"], region["rowEnd"]])
                 unexplained_areas.append(
                     {
-                        "sheetName": region["sheetName"],
+                        "segmentLabel": region["segmentLabel"],
                         "range": region["range"],
                         "reason": "; ".join(suspicion_flags) if suspicion_flags else "Region remains weakly classified by deterministic inventory",
                     }
@@ -406,8 +405,8 @@ def build_inventory_refs(
             region_refs.append(
                 {
                     "regionId": region["regionId"],
-                    "sheetName": region["sheetName"],
-                    "sheetSlug": region["sheetSlug"],
+                    "segmentLabel": region["segmentLabel"],
+                    "segmentId": region["segmentId"],
                     "range": region["range"],
                     "headerRow": region["headerRow"],
                     "headers": region["headers"],
@@ -415,21 +414,21 @@ def build_inventory_refs(
                     "fullRegionPath": region_artifacts[region["regionId"]],
                     "adjacentRegionIds": adjacent_region_ids,
                     "neighborRowSegments": neighbor_segments,
-                    "crossSheetReferenceHints": cross_sheet_hints.get(region["regionId"], []),
+                    "crossSegmentReferenceHints": cross_segment_hints.get(region["regionId"], []),
                     "suspicionFlags": suspicion_flags,
                     "provenance": dict(region["provenance"]),
                 }
             )
 
-        sheet_refs.append(
+        segment_refs.append(
             {
-                "sheetName": sheet["sheetName"],
-                "sheetSlug": sheet["sheetSlug"],
-                "sheetJsonPath": artifact.get("jsonPath"),
-                "sheetCsvPath": artifact.get("csvPath"),
-                "sheetMarkdownPath": artifact.get("markdownPath"),
-                "hidden": sheet["hidden"],
-                "rowSegments": [list(segment) for segment in sheet.get("rowSegments", [])],
+                "segmentLabel": segment["segmentLabel"],
+                "segmentId": segment["segmentId"],
+                "segmentJsonPath": artifact.get("jsonPath"),
+                "segmentCsvPath": artifact.get("csvPath"),
+                "segmentMarkdownPath": artifact.get("markdownPath"),
+                "hidden": segment["hidden"],
+                "rowSegments": [list(segment) for segment in segment.get("rowSegments", [])],
                 "suspiciousSegments": suspicious_segments,
                 "notes": [],
             }
@@ -437,31 +436,31 @@ def build_inventory_refs(
 
     return {
         "scenarioId": scenario_id,
-        "sourceWorkbook": {
-            "primaryInputArtifact": run_manifest.get("primaryInputArtifact", workbook_manifest.get("workbookFilename")),
-            "workbookManifestPath": "intake/workbook-manifest.json",
+        "sourceIntake": {
+            "primaryInputArtifact": run_manifest.get("primaryInputArtifact", source_manifest.get("sourceFilename")),
+            "sourceManifestPath": "intake/source-manifest.json",
         },
-        "sheetRefs": sheet_refs,
+        "segmentRefs": segment_refs,
         "regionRefs": region_refs,
         "unexplainedAreas": unexplained_areas,
     }
 
 
-def inventory_markdown(workbook_profile: dict[str, Any]) -> str:
-    lines = ["# Workbook Inventory", ""]
-    for sheet in workbook_profile["sheets"]:
-        lines.append(f"## {sheet['sheetName']}")
-        lines.append(f"- Hidden: {sheet['hidden']}")
-        lines.append(f"- Non-empty rows: {sheet['nonEmptyRowCount']}")
-        lines.append(f"- Non-empty columns: {sheet['nonEmptyColumnCount']}")
-        lines.append(f"- Formula presence: {sheet['formulaPresence']}")
-        lines.append(f"- Date-like cells: {sheet['dateLikeCellCount']}")
+def inventory_markdown(source_profile: dict[str, Any]) -> str:
+    lines = ["# Source Inventory", ""]
+    for segment in source_profile["segments"]:
+        lines.append(f"## {segment['segmentLabel']}")
+        lines.append(f"- Hidden: {segment['hidden']}")
+        lines.append(f"- Non-empty rows: {segment['nonEmptyRowCount']}")
+        lines.append(f"- Non-empty columns: {segment['nonEmptyColumnCount']}")
+        lines.append(f"- Formula presence: {segment['formulaPresence']}")
+        lines.append(f"- Date-like cells: {segment['dateLikeCellCount']}")
         lines.append("")
     lines.append("## Regions")
     lines.append("")
-    for region in workbook_profile["regions"]:
+    for region in source_profile["regions"]:
         lines.append(f"### {region['regionId']}")
-        lines.append(f"- Sheet: {region['sheetName']}")
+        lines.append(f"- Segment: {region['segmentLabel']}")
         lines.append(f"- Range: {region['range']}")
         lines.append(f"- Kind hints: {', '.join(region['kindHints'])}")
         lines.append(f"- Headers: {', '.join(item for item in region['headers'] if item) or '<none>'}")
@@ -474,33 +473,33 @@ def inventory_markdown(workbook_profile: dict[str, Any]) -> str:
 
 def inventory_refs_markdown(inventory_refs: dict[str, Any]) -> str:
     lines = ["# Inventory Refs", ""]
-    lines.append("## Sheets")
+    lines.append("## Segments")
     lines.append("")
-    for sheet in inventory_refs["sheetRefs"]:
-        lines.append(f"### {sheet['sheetName']}")
-        lines.append(f"- JSON: {sheet['sheetJsonPath']}")
-        lines.append(f"- CSV: {sheet['sheetCsvPath']}")
-        lines.append(f"- Markdown: {sheet['sheetMarkdownPath']}")
-        lines.append(f"- Row segments: {sheet['rowSegments']}")
-        lines.append(f"- Suspicious segments: {sheet['suspiciousSegments']}")
+    for segment in inventory_refs["segmentRefs"]:
+        lines.append(f"### {segment['segmentLabel']}")
+        lines.append(f"- JSON: {segment['segmentJsonPath']}")
+        lines.append(f"- CSV: {segment['segmentCsvPath']}")
+        lines.append(f"- Markdown: {segment['segmentMarkdownPath']}")
+        lines.append(f"- Row segments: {segment['rowSegments']}")
+        lines.append(f"- Suspicious segments: {segment['suspiciousSegments']}")
         lines.append("")
     lines.append("## Regions")
     lines.append("")
     for region in inventory_refs["regionRefs"]:
         lines.append(f"### {region['regionId']}")
-        lines.append(f"- Sheet: {region['sheetName']}")
+        lines.append(f"- Segment: {region['segmentLabel']}")
         lines.append(f"- Range: {region['range']}")
         lines.append(f"- Artifact: {region['fullRegionPath']}")
         lines.append(f"- Kind hints: {', '.join(region['kindHints'])}")
         lines.append(f"- Adjacent regions: {', '.join(region['adjacentRegionIds']) or '<none>'}")
-        lines.append(f"- Cross-sheet refs: {', '.join(region['crossSheetReferenceHints']) or '<none>'}")
+        lines.append(f"- Cross-segment refs: {', '.join(region['crossSegmentReferenceHints']) or '<none>'}")
         lines.append(f"- Suspicion flags: {', '.join(region['suspicionFlags']) or '<none>'}")
         lines.append("")
     if inventory_refs["unexplainedAreas"]:
         lines.append("## Unexplained Areas")
         lines.append("")
         for item in inventory_refs["unexplainedAreas"]:
-            lines.append(f"- {item['sheetName']} {item['range']}: {item['reason']}")
+            lines.append(f"- {item['segmentLabel']} {item['range']}: {item['reason']}")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -508,22 +507,22 @@ def main() -> int:
     args = parse_args()
     run_dir = Path(args.run_dir).resolve()
     intake_root = run_dir / "intake"
-    manifest_path = intake_root / "workbook-manifest.json"
-    workbook_manifest = read_json(manifest_path, default={})
-    sheet_payloads = load_sheet_payloads(intake_root, workbook_manifest)
-    sheets = [sheet_summary(sheet_payload, workbook_manifest) for sheet_payload in sheet_payloads]
+    manifest_path = intake_root / "source-manifest.json"
+    source_manifest = read_json(manifest_path, default={})
+    segment_payloads = load_segment_payloads(run_dir, source_manifest)
+    segments = [segment_summary(segment_payload, source_manifest) for segment_payload in segment_payloads]
 
     regions: list[dict[str, Any]] = []
     region_artifacts: dict[str, str] = {}
     scenario_dir = run_dir / "scenarios" / args.scenario_id / "normalized"
     regions_dir = scenario_dir / "regions"
-    for sheet_payload in sheet_payloads:
-        rows = sheet_rows(sheet_payload)
+    for segment_payload in segment_payloads:
+        rows = segment_rows(segment_payload)
         row_blocks = contiguous_blocks(sorted(rows))
         for region_index, (start_row, end_row) in enumerate(row_blocks, start=1):
             if end_row - start_row < 1:
                 continue
-            region, region_artifact = build_region(sheet_payload, rows, start_row, end_row, region_index)
+            region, region_artifact = build_region(segment_payload, rows, start_row, end_row, region_index)
             region_path = regions_dir / f"{region['regionId']}.json"
             write_json(region_path, region_artifact)
             touch_generated_artifact(run_dir, region_path)
@@ -537,23 +536,23 @@ def main() -> int:
                 if re.match(r"\d{4}-\d{2}-\d{2}T", value):
                     date_values.append(value)
 
-    workbook_profile = {
-        "sheets": sheets,
+    source_profile = {
+        "segments": segments,
         "regions": regions,
         "detectedDateRange": {
             "start": min(date_values) if date_values else None,
             "end": max(date_values) if date_values else None,
         },
-        "unsupportedFeatures": workbook_manifest.get("unsupportedFeatures", {}),
+        "unsupportedFeatures": source_manifest.get("unsupportedFeatures", {}),
     }
 
-    json_path = scenario_dir / "workbook-profile.json"
-    md_path = scenario_dir / "workbook-profile.md"
+    json_path = scenario_dir / "source-profile.json"
+    md_path = scenario_dir / "source-profile.md"
     inventory_refs_path = scenario_dir / "inventory-refs.json"
     inventory_refs_md_path = scenario_dir / "inventory-refs.md"
-    inventory_refs = build_inventory_refs(run_dir, args.scenario_id, workbook_manifest, workbook_profile, region_artifacts)
-    write_json(json_path, workbook_profile)
-    write_text(md_path, inventory_markdown(workbook_profile))
+    inventory_refs = build_inventory_refs(run_dir, args.scenario_id, source_manifest, source_profile, region_artifacts)
+    write_json(json_path, source_profile)
+    write_text(md_path, inventory_markdown(source_profile))
     write_json(inventory_refs_path, inventory_refs)
     write_text(inventory_refs_md_path, inventory_refs_markdown(inventory_refs))
     touch_generated_artifact(run_dir, json_path)
@@ -565,48 +564,35 @@ def main() -> int:
         run_dir,
         state="running",
         current_stage=args.stage_id,
-        next_action="Run focused workbook analysis agents",
-        latest_summary="Workbook inventory and region candidates are ready for semantic analysis.",
+        next_action="Run focused source analysis agents",
+        latest_summary="Source inventory and segment candidates are ready for semantic analysis.",
         active_scenario_id=args.scenario_id,
     )
     update_checkpoint(
         run_dir,
         state="running",
         current_stage=args.stage_id,
-        next_action="Run focused workbook analysis agents",
-        latest_summary="Workbook inventory and region candidates are ready for semantic analysis.",
+        next_action="Run focused source analysis agents",
+        latest_summary="Source inventory and segment candidates are ready for semantic analysis.",
         active_scenario_id=args.scenario_id,
-        resume_hint="Run the focused analysis agents next.",
+        resume_hint="Run the focused analysis stages next.",
     )
     update_scenario_status(
         run_dir,
         args.scenario_id,
         state="running",
         current_stage=args.stage_id,
-        next_action="Run focused workbook analysis agents",
-        latest_summary="Workbook inventory built for semantic planning analysis.",
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="build_sheet_inventory.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
-        summary="Workbook inventory and region candidates generated.",
-        state="success",
-        outputs={
-            "workbookProfilePath": relative_to_run(run_dir, json_path),
-            "inventoryMarkdownPath": relative_to_run(run_dir, md_path),
-            "inventoryRefsPath": relative_to_run(run_dir, inventory_refs_path),
-        },
+        next_action="Run focused source analysis agents",
+        latest_summary="Source inventory built for semantic planning analysis.",
     )
 
-    print(f"WORKBOOK_PROFILE={json_path}")
-    print(f"WORKBOOK_PROFILE_MD={md_path}")
+    print(f"SOURCE_PROFILE={json_path}")
+    print(f"SOURCE_PROFILE_MD={md_path}")
     print(f"INVENTORY_REFS={inventory_refs_path}")
     print(f"INVENTORY_REFS_MD={inventory_refs_md_path}")
-    print("WORKBOOK_PROFILE_SUMMARY_BEGIN")
-    print(inventory_markdown(workbook_profile).rstrip())
-    print("WORKBOOK_PROFILE_SUMMARY_END")
+    print("SOURCE_PROFILE_SUMMARY_BEGIN")
+    print(inventory_markdown(source_profile).rstrip())
+    print("SOURCE_PROFILE_SUMMARY_END")
     print("INVENTORY_REFS_SUMMARY_BEGIN")
     print(inventory_refs_markdown(inventory_refs).rstrip())
     print("INVENTORY_REFS_SUMMARY_END")

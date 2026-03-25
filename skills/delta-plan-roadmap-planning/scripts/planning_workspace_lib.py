@@ -2,7 +2,7 @@
 """
 Shared helpers for the DeltaPlan planning workspace bundle.
 
-AICODE-NOTE: The run workspace files are the durable source of truth for planning execution; these helpers keep the run and scenario metadata synchronized across deterministic stages.
+AICODE-NOTE: The run workspace files are the durable source of truth for planning execution; these helpers keep run and scenario metadata synchronized across deterministic stages without binding the pipeline to any external runner.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-WORKSPACE_VERSION = "1.0"
+WORKSPACE_VERSION = "2.0"
 RUNS_SUBDIR = Path(".codex-artifacts/delta-plan/runs")
 
 
@@ -69,15 +69,29 @@ def classify_input(path: Path) -> str:
 
 
 def choose_primary_input(source_paths: list[Path]) -> Path:
-    ranked = sorted(
-        source_paths,
-        key=lambda item: (
-            0 if item.suffix.lower() in {".xlsx", ".xlsm"} else 1,
-            0 if item.suffix.lower() == ".csv" else 1,
-            item.name.lower(),
-        ),
-    )
+    ranked = sorted(source_paths, key=lambda item: (item.name.lower(), str(item)))
     return ranked[0]
+
+
+def parser_name_for_kind(kind: str) -> str:
+    return {
+        "excel_workbook": "excel",
+        "csv": "csv",
+        "markdown": "markdown",
+        "text": "text",
+    }.get(kind, "unknown")
+
+
+def generic_next_action(source_kind: str) -> str:
+    if source_kind == "unknown":
+        return "Resolve unsupported source type"
+    return "Extract source artifacts"
+
+
+def generic_resume_hint(source_kind: str) -> str:
+    if source_kind == "unknown":
+        return "Provide a supported source artifact and restart the run."
+    return "Run extract_source_artifacts next."
 
 
 def ensure_versioned_copy(destination_dir: Path, source_path: Path) -> Path:
@@ -110,8 +124,32 @@ def run_checkpoint_path(run_dir: Path) -> Path:
     return run_dir / "checkpoint.json"
 
 
+def intake_dir(run_dir: Path) -> Path:
+    return run_dir / "intake"
+
+
+def source_manifest_path(run_dir: Path) -> Path:
+    return intake_dir(run_dir) / "source-manifest.json"
+
+
+def segment_artifacts_dir(run_dir: Path) -> Path:
+    return intake_dir(run_dir) / "segments"
+
+
 def scenario_dir(run_dir: Path, scenario_id: str) -> Path:
     return run_dir / "scenarios" / scenario_id
+
+
+def normalized_dir(run_dir: Path, scenario_id: str) -> Path:
+    return scenario_dir(run_dir, scenario_id) / "normalized"
+
+
+def source_profile_path(run_dir: Path, scenario_id: str) -> Path:
+    return normalized_dir(run_dir, scenario_id) / "source-profile.json"
+
+
+def inventory_refs_path(run_dir: Path, scenario_id: str) -> Path:
+    return normalized_dir(run_dir, scenario_id) / "inventory-refs.json"
 
 
 def scenario_manifest_path(run_dir: Path, scenario_id: str) -> Path:
@@ -234,53 +272,6 @@ def update_scenario_manifest(run_dir: Path, scenario_id: str, **changes: Any) ->
     write_json(scenario_manifest_path(run_dir, scenario_id), manifest)
 
 
-def ensure_attractor_stage_artifacts(
-    run_dir: Path,
-    *,
-    stage_id: str,
-    command: str,
-    inputs: dict[str, Any],
-    summary: str,
-    state: str,
-    outputs: dict[str, Any] | None = None,
-) -> None:
-    attractor_root = run_dir / "attractor"
-    stage_dir = attractor_root / stage_id
-    attractor_root.mkdir(parents=True, exist_ok=True)
-    (attractor_root / "context").mkdir(parents=True, exist_ok=True)
-
-    run_manifest = read_json(attractor_root / "run-manifest.json", default={"stages": []})
-    stages = set(run_manifest.get("stages", []))
-    stages.add(stage_id)
-    run_manifest["stages"] = sorted(stages)
-    run_manifest["updatedAt"] = utc_now()
-    write_json(attractor_root / "run-manifest.json", run_manifest)
-
-    write_json(stage_dir / "active-tools.json", [{"command": command}])
-    write_json(stage_dir / "context-inputs.json", inputs)
-    write_text(stage_dir / "prompt.md", command)
-    write_text(stage_dir / "response.md", summary)
-    write_json(
-        stage_dir / "status.json",
-        {
-            "stageId": stage_id,
-            "state": state,
-            "updatedAt": utc_now(),
-            "summary": summary,
-            "outputs": outputs or {},
-        },
-    )
-    write_json(
-        attractor_root / "context" / "latest.json",
-        {
-            "stageId": stage_id,
-            "updatedAt": utc_now(),
-            "inputs": inputs,
-            "outputs": outputs or {},
-        },
-    )
-
-
 def next_output_prefix(outputs_dir: Path, scenario_slug: str) -> str:
     existing = sorted(outputs_dir.glob(f"v*_{scenario_slug}-report.html"))
     if not existing:
@@ -359,6 +350,6 @@ ESTIMATE_PROFILES = {
         key="ai",
         development_column=None,
         qa_column=None,
-        description="AI-assisted estimate profile",
+        description="AI-assisted delivery estimate profile",
     ),
 }

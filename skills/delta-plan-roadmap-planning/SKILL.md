@@ -29,13 +29,13 @@ Use this skill when the user wants to run, inspect, clarify, or branch a DeltaPl
 ```bash
 .deltaplan/.venv/bin/python .claude/skills/deltaplan/scripts/planning_workflow.py start \
   --workspace-root "$PWD" \
-  --input "/absolute/path/to/workbook.xlsx"
+  --input "/absolute/path/to/source-artifact.xlsx"
 ```
 
 2. Run the baseline stages in order:
    - `ingest_sources.py`
-   - `extract_excel_artifacts.py`
-   - `build_sheet_inventory.py`
+   - `extract_source_artifacts.py`
+   - `build_source_inventory.py`
    - `run_analysis_fanout.py`
    - `merge_planning_signals.py`
    - `build_candidate_model.py`

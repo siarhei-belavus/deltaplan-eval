@@ -2,7 +2,7 @@
 """
 Build a DeltaPlan solve request from the candidate model and confirmed overrides.
 
-AICODE-NOTE: Payload build is isolated from workbook parsing so DTO alignment can be validated and evolved against the live DeltaPlan contract without reworking intake stages.
+AICODE-NOTE: Payload build is isolated from source parsing so DTO alignment can be validated and evolved against the live DeltaPlan contract without reworking intake stages.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from planning_workspace_lib import (
-    ensure_attractor_stage_artifacts,
     next_output_prefix,
     preferred_planning_signals_path,
     relative_to_run,
@@ -150,15 +149,6 @@ def main() -> int:
         run_dir,
         args.scenario_id,
         latestSolveRequestPath=relative_to_run(run_dir, request_path),
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="build_solver_payload.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id, "estimateProfile": estimate_profile},
-        summary="Built DeltaPlan solve-request payload from the candidate model.",
-        state="success",
-        outputs={"solveRequestPath": relative_to_run(run_dir, request_path)},
     )
     print(f"SOLVE_REQUEST={request_path}")
     print("STATE=ready_to_solve")

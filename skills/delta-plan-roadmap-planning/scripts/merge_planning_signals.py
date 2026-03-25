@@ -2,7 +2,7 @@
 """
 Merge focused analysis agent outputs into the canonical planning-signals contract.
 
-AICODE-NOTE: The merge layer is deterministic so workbook reasoning can fan out across agents without turning final planning facts into opaque LLM-only state.
+AICODE-NOTE: The merge layer is deterministic so source reasoning can fan out across agents without turning final planning facts into opaque LLM-only state.
 """
 
 from __future__ import annotations
@@ -15,8 +15,7 @@ from typing import Any
 
 from planning_workspace_lib import (
     ESTIMATE_PROFILES,
-    ensure_attractor_stage_artifacts,
-    load_run_manifest,
+        load_run_manifest,
     relative_to_run,
     touch_generated_artifact,
     update_checkpoint,
@@ -62,11 +61,12 @@ def extract_json(text: str) -> Any:
         return json.loads(match.group(1))
 
 
-def load_agent_output(run_dir: Path, node_id: str) -> Any:
-    response_path = run_dir / "attractor" / node_id / "response.md"
-    if not response_path.exists():
-        raise FileNotFoundError(f"Missing analysis response for {node_id}: {response_path}")
-    return extract_json(response_path.read_text())
+def load_agent_output(run_dir: Path, scenario_id: str, node_id: str) -> Any:
+    analysis_path = run_dir / "scenarios" / scenario_id / "analysis" / f"{node_id}.json"
+    if analysis_path.exists():
+        return load_json(analysis_path)
+
+    raise FileNotFoundError(f"Missing analysis output for {node_id}: {analysis_path}")
 
 
 def normalize_agent_output(payload: Any) -> dict[str, Any]:
@@ -286,7 +286,7 @@ def derived_constraints(features: list[dict[str, Any]], capacities: list[dict[st
         constraints.append(
             {
                 "type": "capacity_missing",
-                "summary": "No explicit monthly capacity table was extracted from the workbook.",
+                "summary": "No explicit monthly capacity table was extracted from source artifacts.",
                 "confidence": "medium",
                 "provenance": [item for feature in features[:2] for item in feature.get("provenance", [])][:4],
             }
@@ -341,9 +341,12 @@ def main() -> int:
     args = parse_args()
     run_dir = Path(args.run_dir).resolve()
     scenario_dir = run_dir / "scenarios" / args.scenario_id / "normalized"
-    workbook_profile = load_json(scenario_dir / "workbook-profile.json")
+    source_profile = load_json(scenario_dir / "source-profile.json")
     inventory_refs = load_json(scenario_dir / "inventory-refs.json")
-    outputs = {node_id: normalize_agent_output(load_agent_output(run_dir, node_id)) for node_id in ANALYSIS_NODES}
+    outputs = {
+        node_id: normalize_agent_output(load_agent_output(run_dir, args.scenario_id, node_id))
+        for node_id in ANALYSIS_NODES
+    }
 
     structure_output = outputs["structure_agent"]
     feature_output = outputs["feature_agent"]
@@ -502,7 +505,7 @@ def main() -> int:
         ],
     }
     if not features:
-        validation_summary["blockingIssues"].append("No feature-like work items were extracted from the workbook.")
+        validation_summary["blockingIssues"].append("No feature-like work items were extracted from source artifacts.")
     missing_estimates = [feature["id"] for feature in features if not feature.get("estimateProfiles")]
     if missing_estimates:
         validation_summary["blockingIssues"].append(
@@ -521,7 +524,7 @@ def main() -> int:
         )
     if unexplored_risky_regions:
         validation_summary["blockingIssues"].append(
-            "Potentially important workbook regions remain unexplained: " + ", ".join(unexplored_risky_regions) + "."
+            "Potentially important source segments remain unexplained: " + ", ".join(unexplored_risky_regions) + "."
         )
 
     referenced_ids = referenced_feature_ids(milestones, dependencies)
@@ -536,18 +539,18 @@ def main() -> int:
         )
 
     if inventory_refs.get("unexplainedAreas"):
-        validation_summary["warnings"].append("Inventory recorded suspicious unexplained workbook areas that require explicit coverage or justification.")
+        validation_summary["warnings"].append("Inventory recorded suspicious unexplained source segments that require explicit coverage or justification.")
 
     completeness_gate_status = "ready_to_solve" if not validation_summary["blockingIssues"] and not unresolved_fields else "needs_confirmation"
 
     planning_signals = {
         "scenarioId": args.scenario_id,
         "sourceArtifacts": [
-            "intake/workbook-manifest.json",
-            f"scenarios/{args.scenario_id}/normalized/workbook-profile.json",
+            "intake/source-manifest.json",
+            f"scenarios/{args.scenario_id}/normalized/source-profile.json",
             f"scenarios/{args.scenario_id}/normalized/inventory-refs.json",
         ],
-        "workbookProfile": workbook_profile,
+        "sourceProfile": source_profile,
         "inventoryRefs": inventory_refs,
         "planningFacts": {
             "features": features,
@@ -627,15 +630,6 @@ def main() -> int:
         current_stage=args.stage_id,
         next_action="Build candidate model",
         latest_summary=latest_summary,
-    )
-    ensure_attractor_stage_artifacts(
-        run_dir,
-        stage_id=args.stage_id,
-        command="merge_planning_signals.py",
-        inputs={"runDir": str(run_dir), "scenarioId": args.scenario_id},
-        summary=latest_summary,
-        state="success",
-        outputs={"planningSignalsPath": relative_to_run(run_dir, output_path)},
     )
 
     print(f"PLANNING_SIGNALS={output_path}")
